@@ -213,7 +213,6 @@ def writeFiles(stats):
 while True == True:   
     writeFiles(getStats(gettourneyData(username,currency)))
     print "files Writen at "+str(datetime.datetime.time(datetime.datetime.now()))
-    break
     time.sleep(5)
 
 
