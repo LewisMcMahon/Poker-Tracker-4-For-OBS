@@ -47,7 +47,8 @@ def gettourneyData(username,currency):
       tourney_summary.cnt_players,
       tourney_table_type.val_seats,
       tourney_table_type.val_tables,
-      tourney_table_type.val_speed
+      tourney_table_type.val_speed,
+      tourney_summary.cnt_hands
       
     FROM 
       public.tourney_summary, 
@@ -85,10 +86,11 @@ def gettourneyData(username,currency):
                     "val_curr_conv" : row[13],
                     "val_finish"    : row[14],
                     "id_tourney"    : row[15],
-                    "cnt_players"   : row[15],
-                    "val_seats"     : row[15],
-                    "val_tables"    : row[15],
-                    "val_speed"     : row[15]}
+                    "cnt_players"   : row[16],
+                    "val_seats"     : row[17],
+                    "val_tables"    : row[18],
+                    "val_speed"     : row[19],
+                    "cnt_hands"     : row[20]}
         tourneyData.append(tempDict)
         
     return tourneyData
@@ -110,17 +112,17 @@ def getEpoch(inputDateTime):
 
 def getStats(tourneyData):
     stats = {"Live" :           {"Net Won" : 0, "Tournaments" : []}, 
-            "Today" :           {"Net Won" : 0, "Time Played" : 0, "Hands" : 0}, 
-            "Yesterday" :       {"Net Won" : 0, "Time Played" : 0, "Hands" : 0}, 
-            "This Week" :       {"Net Won" : 0, "Time Played" : 0, "Hands" : 0}, 
-            "This Month" :      {"Net Won" : 0, "Time Played" : 0, "Hands" : 0}, 
-            "All Time":         {"Net Won" : 0, "Time Played" : 0, "Hands" : 0}
+            "Today" :           {"Net Won" : 0, "Tournaments" : 0, "Hands" : 0}, 
+            "Yesterday" :       {"Net Won" : 0, "Tournaments" : 0, "Hands" : 0}, 
+            "This Week" :       {"Net Won" : 0, "Tournaments" : 0, "Hands" : 0}, 
+            "This Month" :      {"Net Won" : 0, "Tournaments" : 0, "Hands" : 0}, 
+            "All Time":         {"Net Won" : 0, "Tournaments" : 0, "Hands" : 0}
     }
     
     for tourney in tourneyData:
         tourneyNetWon = calcTournamentNetValue(tourney)
-        
-        tournamentStartDateADJ = datetime.datetime.fromtimestamp(getEpoch(tourney["date_start"])+timeOffset)
+        tourneyHandCount = 0
+        #tournamentStartDateADJ = datetime.datetime.fromtimestamp(getEpoch(tourney["date_start"])+timeOffset)
         
         secsSinceEnd = datetime.datetime.now()-tourney["date_end"]
         secsSinceEnd = secsSinceEnd.total_seconds()
@@ -136,9 +138,10 @@ def getStats(tourneyData):
     
             cur.execute("""SELECT 
                               player.id_player, 
-                              tourney_hand_player_statistics.amt_p_effective_stack, 
+                              tourney_hand_player_statistics.amt_before, 
                               tourney_blinds.amt_bb, 
-                              tourney_hand_player_statistics.id_hand
+                              tourney_hand_player_statistics.id_hand,
+                              tourney_hand_player_statistics.amt_won 
                             FROM 
                               public.player, 
                               public.tourney_hand_player_statistics, 
@@ -151,14 +154,16 @@ def getStats(tourneyData):
             
             
             tourneyRow = cur.fetchall()
+            tourneyHandCount = len(tourneyRow)
             
-            liveTourneyData = {"Buyin" : tourney["amt_buyin"]+tourney["amt_fee"],"Players" : tourney["cnt_players"],"Seats" : tourney["val_seats"], "Tables" : tourney["val_tables"], "Speed" : tourney["val_speed"], "BB" : tourneyRow[0][2], "Stack" : tourneyRow[0][1]}
-        
+            liveTourneyData = {"Buyin" : tourney["amt_buyin"]+tourney["amt_fee"],"Players" : tourney["cnt_players"],"Seats" : tourney["val_seats"], "Tables" : tourney["val_tables"], "Speed" : tourney["val_speed"], "BB" : tourneyRow[0][2], "Stack" : tourneyRow[0][1]+tourneyRow[0][1]}
         
             if countActive == False:
                 tourneyNetWon = 0
             
             stats["Live"]["Tournaments"].append(liveTourneyData)
+        else:
+            tourneyHandCount = tourney["cnt_hands"]
         
         nowDateTime = datetime.datetime.now()
         secondsSinceMidnight = (nowDateTime - nowDateTime.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()        
@@ -172,10 +177,14 @@ def getStats(tourneyData):
         tourneyDelta = tourneyDelta.total_seconds()
         if tourneyDelta < secondsInDay:
             stats["Today"]["Net Won"] = stats["Today"]["Net Won"]+tourneyNetWon
+            stats["Today"]["Hands"] = stats["Today"]["Hands"]+tourneyHandCount
+            stats["Today"]["Tournaments"] = stats["Today"]["Tournaments"]+1
         
         #Yesterday  
         if tourneyDelta < secondsInDay*2 and tourneyDelta > secondsInDay:              
-            stats["Yesterday"]["Net Won"] =  stats["Yesterday"]["Net Won"]+tourneyNetWon 
+            stats["Yesterday"]["Net Won"] =  stats["Yesterday"]["Net Won"]+tourneyNetWon
+            stats["Yesterday"]["Hands"] = stats["Yesterday"]["Hands"]+tourneyHandCount
+            stats["Yesterday"]["Tournaments"] = stats["Yesterday"]["Tournaments"]+1 
         
         #thisWeek
         weekStart = datetime.date.today() - datetime.timedelta(days = datetime.date.today().weekday())
@@ -183,13 +192,19 @@ def getStats(tourneyData):
         
         if tourney["date_start"].date() <= weekEnd and tourney["date_start"].date() >= weekStart:
             stats["This Week"]["Net Won"] = stats["This Week"]["Net Won"]+tourneyNetWon
+            stats["This Week"]["Hands"] = stats["This Week"]["Hands"]+tourneyHandCount
+            stats["This Week"]["Tournaments"] = stats["This Week"]["Tournaments"]+1
         
         #month
         if tourney["date_start"].month == datetime.date.today().month:
             stats["This Month"]["Net Won"] = stats["This Month"]["Net Won"]+tourneyNetWon
+            stats["This Month"]["Hands"] = stats["This Month"]["Hands"]+tourneyHandCount
+            stats["This Month"]["Tournaments"] = stats["This Month"]["Tournaments"]+1
                 
         #all time
         stats["All Time"]["Net Won"] = stats["All Time"]["Net Won"]+tourneyNetWon
+        stats["All Time"]["Hands"] = stats["All Time"]["Hands"]+tourneyHandCount
+        stats["All Time"]["Tournaments"] = stats["All Time"]["Tournaments"]+1
     return stats;
 
 def writeFiles(stats):
@@ -207,12 +222,16 @@ def writeFiles(stats):
             for stat in stats[timePoint]:
                 stats[timePoint][stat]
                 statFile = open(timePoint+"/"+stat+".txt", "wb")
-                statFile.write(timePoint+" "+stat+": $"+str(stats[timePoint][stat]))
+                if stat == "Net Won":
+                    statFile.write(timePoint+" "+stat+": $"+str(stats[timePoint][stat]))
+                else:
+                    statFile.write(timePoint+" "+stat+": "+str(stats[timePoint][stat])) 
                 statFile.close()
 
 while True == True:   
     writeFiles(getStats(gettourneyData(username,currency)))
     print "files Writen at "+str(datetime.datetime.time(datetime.datetime.now()))
+    #break
     time.sleep(5)
 
 
